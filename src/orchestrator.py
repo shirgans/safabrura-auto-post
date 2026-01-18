@@ -191,6 +191,7 @@ class LectureWorkflow:
                 mp3_path=state["mp3_path"],
                 title=state["lecture"].title,
                 description=f"הרצאה מתאריך {state['lecture'].formatted_date}",
+                publish=True,
             )
             state["captivate_episode_id"] = result["episode_id"]
             state["captivate_mp3_url"] = result["mp3_url"]
