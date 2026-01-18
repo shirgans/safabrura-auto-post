@@ -16,7 +16,7 @@ from src.services.ffmpeg_converter import FFmpegConverter
 from src.services.captivate import CaptivateService
 from src.services.wordpress import WordPressService
 from src.services.tracking import ProcessingTracker
-from src.utils.hebrew_dates import format_lecture_title, get_category_for_date
+from src.utils.hebrew_dates import format_lecture_title, get_category_for_date, get_hebrew_date_string
 
 
 logger = logging.getLogger(__name__)
@@ -234,14 +234,44 @@ class LectureWorkflow:
                 else:
                     logger.info(f"Category not found: {year_category}")
             
-            # Build the content
-            content = self.wordpress_service._build_lecture_content(lecture)
+            # Build ACF custom fields
+            acf_meta = {}
             
-            # Create the post
+            # Lecture details fields
+            if lecture.lecture_date:
+                # Hebrew date (e.g., "כ"ח טבת")
+                acf_meta["hebrew_date"] = get_hebrew_date_string(lecture.lecture_date)
+                # Gregorian date (e.g., "14.1.26")
+                acf_meta["gregorian_date"] = lecture.lecture_date.strftime("%d.%m.%y")
+            
+            # Captivate fields
+            if state.get("captivate_episode_id"):
+                episode_id = state["captivate_episode_id"]
+                acf_meta["captivate_episode_player_url"] = f"https://player.captivate.fm/episode/{episode_id}"
+            
+            if state.get("captivate_mp3_url"):
+                acf_meta["captivate_episode_mp3_url"] = state["captivate_mp3_url"]
+                acf_meta["audio_file"] = state["captivate_mp3_url"]
+            
+            # Simple content - just the video since theme handles audio player
+            content = ""
+            if lecture.s3_url:
+                poster_attr = f' poster="{settings.VIDEO_POSTER_URL}"' if settings.VIDEO_POSTER_URL else ''
+                content = (
+                    f"<h2>צפייה בהרצאה</h2>\n"
+                    f'<video controls width="100%" preload="metadata"{poster_attr}>\n'
+                    f'  <source src="{lecture.s3_url}" type="video/mp4">\n'
+                    f"  הדפדפן שלך לא תומך בתגית וידאו.\n"
+                    f"</video>"
+                )
+            
+            # Create the post with ACF fields
             result = self.wordpress_service.create_draft_post(
                 title=formatted_title,
                 content=content,
                 categories=category_ids,
+                status="publish",
+                meta=acf_meta,
             )
             
             state["wordpress_post_id"] = result["post_id"]
@@ -251,6 +281,7 @@ class LectureWorkflow:
             state["lecture"].wordpress_post_url = result["post_url"]
 
             logger.info(f"Created WordPress post: {result['post_id']} - {formatted_title}")
+            logger.info(f"ACF fields: {list(acf_meta.keys())}")
         except Exception as e:
             error = f"Failed to create WordPress post: {e}"
             logger.error(error)
