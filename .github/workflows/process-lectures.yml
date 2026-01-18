@@ -58,6 +58,8 @@ jobs:
         run: echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' | base64 -d > service-account.json
       
       - name: Run automation
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: python src/main.py -v
       
       - name: Upload tracking file to S3
