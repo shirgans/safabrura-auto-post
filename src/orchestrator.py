@@ -271,7 +271,7 @@ class LectureWorkflow:
                 content=content,
                 categories=category_ids,
                 status="publish",
-                meta=acf_meta,
+                acf=acf_meta,
             )
             
             state["wordpress_post_id"] = result["post_id"]

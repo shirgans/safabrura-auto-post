@@ -54,6 +54,7 @@ class WordPressService:
         tags: list[int] | None = None,
         status: str = "publish",
         meta: dict | None = None,
+        acf: dict | None = None,
     ) -> dict:
         """Create a post in WordPress.
 
@@ -63,7 +64,8 @@ class WordPressService:
             categories: List of category IDs.
             tags: List of tag IDs.
             status: Post status - "publish", "draft", "pending", "private".
-            meta: Custom fields as dict (requires ACF or similar plugin).
+            meta: WordPress core meta fields.
+            acf: ACF (Advanced Custom Fields) as dict.
 
         Returns:
             Dict with post_id and post_url.
@@ -85,6 +87,8 @@ class WordPressService:
             payload["tags"] = tags
         if meta:
             payload["meta"] = meta
+        if acf:
+            payload["acf"] = acf
 
         response = requests.post(url, json=payload, auth=self.auth, headers=self.headers)
 
