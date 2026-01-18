@@ -52,14 +52,18 @@ class WordPressService:
         content: str,
         categories: list[int] | None = None,
         tags: list[int] | None = None,
+        status: str = "publish",
+        meta: dict | None = None,
     ) -> dict:
-        """Create a draft post in WordPress.
+        """Create a post in WordPress.
 
         Args:
             title: Post title.
             content: Post content (HTML).
             categories: List of category IDs.
             tags: List of tag IDs.
+            status: Post status - "publish", "draft", "pending", "private".
+            meta: Custom fields as dict (requires ACF or similar plugin).
 
         Returns:
             Dict with post_id and post_url.
@@ -72,13 +76,15 @@ class WordPressService:
         payload = {
             "title": title,
             "content": content,
-            "status": "draft",
+            "status": status,
         }
 
         if categories:
             payload["categories"] = categories
         if tags:
             payload["tags"] = tags
+        if meta:
+            payload["meta"] = meta
 
         response = requests.post(url, json=payload, auth=self.auth, headers=self.headers)
 
