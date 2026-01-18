@@ -1,0 +1,69 @@
+name: Process Lectures
+
+on:
+  schedule:
+    # Run daily at 6am UTC (8am Israel time)
+    - cron: '0 6 * * *'
+  workflow_dispatch:  # Manual trigger button
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download tracking file from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_S3_REGION }}
+        run: |
+          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/tracking/processed_files.json ./processed_files.json || echo '{"processed": {}}' > processed_files.json
+        continue-on-error: true
+      
+      - name: Create .env file
+        run: |
+          cat << 'EOF' > .env
+          GOOGLE_DRIVE_FOLDER_ID=${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+          GOOGLE_SERVICE_ACCOUNT_FILE=service-account.json
+          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_S3_BUCKET=${{ secrets.AWS_S3_BUCKET }}
+          AWS_S3_REGION=${{ secrets.AWS_S3_REGION }}
+          WORDPRESS_URL=${{ secrets.WORDPRESS_URL }}
+          WORDPRESS_USERNAME=${{ secrets.WORDPRESS_USERNAME }}
+          WORDPRESS_APP_PASSWORD=${{ secrets.WORDPRESS_APP_PASSWORD }}
+          CAPTIVATE_API_USER_ID=${{ secrets.CAPTIVATE_API_USER_ID }}
+          CAPTIVATE_API_TOKEN=${{ secrets.CAPTIVATE_API_TOKEN }}
+          CAPTIVATE_SHOW_ID=${{ secrets.CAPTIVATE_SHOW_ID }}
+          TEMP_DOWNLOAD_PATH=./temp
+          FFMPEG_PATH=ffmpeg
+          AUDIO_TRIM_START=0
+          VIDEO_POSTER_URL=${{ secrets.VIDEO_POSTER_URL }}
+          EOF
+      
+      - name: Create service account file
+        run: echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' | base64 -d > service-account.json
+      
+      - name: Run automation
+        run: python src/main.py -v
+      
+      - name: Upload tracking file to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_S3_REGION }}
+        run: |
+          aws s3 cp ./processed_files.json s3://${{ secrets.AWS_S3_BUCKET }}/tracking/processed_files.json
