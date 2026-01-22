@@ -266,13 +266,13 @@ class LectureWorkflow:
                     f"</video>"
                 )
             
-            # Create the post with ACF fields
+            # Create the post with meta fields (registered via functions.php)
             result = self.wordpress_service.create_draft_post(
                 title=formatted_title,
                 content=content,
                 categories=category_ids,
                 status="publish",
-                acf=acf_meta,
+                meta=acf_meta,
             )
             
             state["wordpress_post_id"] = result["post_id"]
@@ -282,7 +282,7 @@ class LectureWorkflow:
             state["lecture"].wordpress_post_url = result["post_url"]
 
             logger.info(f"Created WordPress post: {result['post_id']} - {formatted_title}")
-            logger.info(f"ACF fields: {list(acf_meta.keys())}")
+            logger.info(f"Meta fields: {list(acf_meta.keys())}")
         except Exception as e:
             error = f"Failed to create WordPress post: {e}"
             logger.error(error)
