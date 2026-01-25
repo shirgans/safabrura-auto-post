@@ -58,6 +58,7 @@ class ProcessingTracker:
         wordpress_url: Optional[str] = None,
         captivate_episode_id: Optional[str] = None,
         s3_url: Optional[str] = None,
+        skipped: bool = False,
     ) -> None:
         """Mark a file as successfully processed.
         
@@ -67,6 +68,7 @@ class ProcessingTracker:
             wordpress_url: URL of the created WordPress post.
             captivate_episode_id: Captivate episode ID.
             s3_url: S3 video URL.
+            skipped: Whether the file was skipped (e.g., too short).
         """
         if "processed" not in self._data:
             self._data["processed"] = {}
@@ -77,6 +79,7 @@ class ProcessingTracker:
             "wordpress_url": wordpress_url,
             "captivate_episode_id": captivate_episode_id,
             "s3_url": s3_url,
+            "skipped": skipped,
         }
         self._save()
         logger.info(f"Marked as processed: {filename}")

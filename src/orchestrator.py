@@ -187,9 +187,15 @@ class LectureWorkflow:
             return state
 
         try:
+            # Use the same Hebrew-formatted title as WordPress
+            formatted_title = format_lecture_title(
+                state["lecture"].filename,
+                state["lecture"].lecture_date
+            )
+            
             result = self.captivate_service.upload_episode(
                 mp3_path=state["mp3_path"],
-                title=state["lecture"].title,
+                title=formatted_title,
                 description=f"הרצאה מתאריך {state['lecture'].formatted_date}",
                 publish=True,
             )
@@ -380,8 +386,25 @@ class LectureWorkflow:
         
         logger.info(f"Found {len(all_files)} total files, {len(unprocessed)} unprocessed")
 
+        # Minimum duration: 10 minutes (in milliseconds)
+        MIN_DURATION_MS = 10 * 60 * 1000
+
         results = []
         for file_info in unprocessed:
+            # Check video duration - skip if less than 10 minutes
+            video_metadata = file_info.get("videoMediaMetadata", {})
+            duration_ms = video_metadata.get("durationMillis")
+            
+            if duration_ms:
+                duration_ms = int(duration_ms)
+                duration_min = duration_ms / 1000 / 60
+                if duration_ms < MIN_DURATION_MS:
+                    logger.info(f"Skipping {file_info['name']} - too short ({duration_min:.1f} minutes)")
+                    # Mark as processed so we don't check it again
+                    self.tracker.mark_processed(file_info["id"], file_info["name"], skipped=True)
+                    continue
+                logger.info(f"Video duration: {duration_min:.1f} minutes")
+            
             lecture = Lecture.from_drive_file(file_info["id"], file_info["name"])
             logger.info(f"Processing: {lecture.title}")
             result = self.process_lecture(lecture)

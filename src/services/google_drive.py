@@ -75,7 +75,7 @@ class GoogleDriveService:
             self.service.files()
             .list(
                 q=query,
-                fields="files(id, name, createdTime, size, mimeType)",
+                fields="files(id, name, createdTime, size, mimeType, videoMediaMetadata)",
                 orderBy="createdTime desc",
             )
             .execute()
