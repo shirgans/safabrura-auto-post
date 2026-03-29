@@ -2,8 +2,8 @@ name: Process Lectures
 
 on:
   schedule:
-    # Run every 15 minutes
-    - cron: '*/15 * * * *'
+    # Run once per hour
+    - cron: '0 * * * *'
   workflow_dispatch:  # Manual trigger button
 
 jobs:
