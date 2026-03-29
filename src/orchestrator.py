@@ -160,10 +160,12 @@ class LectureWorkflow:
             mp3_path = settings.TEMP_DOWNLOAD_PATH / f"{mp3_filename}.mp3"
 
             # FFmpeg reads directly from S3 URL
+            # Use 128k bitrate to keep file size under Captivate's 400MB limit
             logger.info(f"FFmpeg converting from URL: {state['s3_url']}")
             mp3_path = self.ffmpeg_converter.convert_url_to_mp3(
                 video_url=state["s3_url"],
                 output_path=mp3_path,
+                bitrate="128k",
             )
 
             state["mp3_path"] = mp3_path
@@ -362,15 +364,22 @@ class LectureWorkflow:
 
         result = self.graph.invoke(initial_state)
 
-        # Mark as processed if successful (no errors or only minor errors)
-        if not result["errors"] and result["wordpress_post_url"]:
+        # Mark as processed if WordPress post was created (core success)
+        # Captivate failures are treated as warnings, not critical errors
+        if result["wordpress_post_url"]:
             self.tracker.mark_processed(
                 file_id=lecture.drive_file_id,
                 filename=lecture.filename,
                 wordpress_url=result["wordpress_post_url"],
-                captivate_episode_id=result["captivate_episode_id"],
-                s3_url=result["s3_url"],
+                captivate_episode_id=result.get("captivate_episode_id"),
+                s3_url=result.get("s3_url"),
             )
+            # Separate Captivate errors from critical errors for reporting
+            result["captivate_warnings"] = [e for e in result["errors"] if "Captivate" in e]
+            result["critical_errors"] = [e for e in result["errors"] if "Captivate" not in e]
+        else:
+            result["captivate_warnings"] = []
+            result["critical_errors"] = result["errors"]
 
         return result
 

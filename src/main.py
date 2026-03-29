@@ -79,24 +79,37 @@ def run_workflow(dry_run: bool = False) -> int:
     # Process all new lectures
     results = workflow.process_new_lectures()
 
-    # Report results
-    success_count = sum(1 for r in results if not r["errors"])
-    error_count = len(results) - success_count
+    # Report results - distinguish between critical errors and warnings
+    success_count = sum(1 for r in results if not r.get("critical_errors"))
+    warning_count = sum(1 for r in results if r.get("captivate_warnings") and not r.get("critical_errors"))
+    error_count = sum(1 for r in results if r.get("critical_errors"))
 
     logger.info(f"\nProcessing complete:")
     logger.info(f"  Successful: {success_count}")
-    logger.info(f"  With errors: {error_count}")
+    if warning_count:
+        logger.info(f"  With warnings (Captivate): {warning_count}")
+    logger.info(f"  With critical errors: {error_count}")
 
     for result in results:
         lecture = result["lecture"]
-        if result["errors"]:
+        critical_errors = result.get("critical_errors", [])
+        captivate_warnings = result.get("captivate_warnings", [])
+        
+        if critical_errors:
             logger.warning(f"\n{lecture.title}:")
-            for error in result["errors"]:
+            for error in critical_errors:
                 logger.warning(f"  - {error}")
+        elif captivate_warnings:
+            logger.info(f"\n{lecture.title}:")
+            logger.info(f"  WordPress post: {result['wordpress_post_url']}")
+            for warning in captivate_warnings:
+                logger.warning(f"  - Warning: {warning}")
         else:
             logger.info(f"\n{lecture.title}:")
             logger.info(f"  WordPress post: {result['wordpress_post_url']}")
 
+    # Only fail for critical errors (WordPress/S3/conversion failures)
+    # Captivate failures are warnings, not critical
     return 0 if error_count == 0 else 1
 
 
