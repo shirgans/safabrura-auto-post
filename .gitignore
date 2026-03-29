@@ -47,6 +47,10 @@ htmlcov/
 # Google credentials
 *.json
 !package.json
+service-account-base64.txt
+
+# Test files with local dependencies
+test_*.py
 
 # Logs
 *.log
