@@ -6,10 +6,14 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:  # Manual trigger button
 
+# Required so the keepalive step can push its dummy commit
+permissions:
+  contents: write
+
 jobs:
   process:
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
       
@@ -72,3 +76,13 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.AWS_S3_REGION }}
         run: |
           aws s3 cp ./processed_files.json s3://${{ secrets.AWS_S3_BUCKET }}/tracking/processed_files.json
+
+      # Keeps the repo "active" so GitHub never auto-disables this scheduled
+      # workflow for 60 days of inactivity. Makes a tiny empty commit only when
+      # the last commit is older than 45 days; otherwise it does nothing.
+      - name: Keepalive (prevent scheduled-workflow auto-disable)
+        if: always()
+        uses: gautamkrishnar/keepalive-workflow@v2
+        with:
+          time_elapsed: "45"
+          commit_message: "chore: keepalive to prevent workflow auto-disable"
