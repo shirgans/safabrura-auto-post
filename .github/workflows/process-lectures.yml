@@ -78,11 +78,30 @@ jobs:
           aws s3 cp ./processed_files.json s3://${{ secrets.AWS_S3_BUCKET }}/tracking/processed_files.json
 
       # Keeps the repo "active" so GitHub never auto-disables this scheduled
-      # workflow for 60 days of inactivity. Makes a tiny empty commit only when
-      # the last commit is older than 45 days; otherwise it does nothing.
+      # workflow after 60 days without commits. Uses an inline script (no
+      # third-party action) so it works even when the account's Actions policy
+      # only permits GitHub-authored actions. Commits only when the latest
+      # commit is older than 45 days; otherwise it's a no-op.
       - name: Keepalive (prevent scheduled-workflow auto-disable)
         if: always()
-        uses: gautamkrishnar/keepalive-workflow@v2
-        with:
-          time_elapsed: "45"
-          commit_message: "chore: keepalive to prevent workflow auto-disable"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LAST_COMMIT_TS=$(git log -1 --format=%ct)
+          NOW_TS=$(date +%s)
+          DAYS_OLD=$(( (NOW_TS - LAST_COMMIT_TS) / 86400 ))
+
+          if [ "$DAYS_OLD" -lt 45 ]; then
+            echo "Last commit is $DAYS_OLD days old; skipping keepalive."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          mkdir -p .github
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/.keepalive
+
+          git add .github/.keepalive
+          git commit -m "chore: keepalive to prevent workflow auto-disable" || exit 0
+          git push
