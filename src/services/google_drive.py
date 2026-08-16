@@ -16,6 +16,7 @@ class GoogleDriveService:
     """Service for interacting with Google Drive."""
 
     SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+    MAX_FOLDER_DEPTH = 3
     VIDEO_MIME_TYPES = [
         "video/mp4",
         "video/webm",
@@ -34,7 +35,10 @@ class GoogleDriveService:
             folder_id: Google Drive folder ID to watch.
             service_account_file: Path to service account JSON file.
         """
-        self.folder_id = folder_id or settings.GOOGLE_DRIVE_FOLDER_ID
+        raw_folder_id = folder_id or settings.GOOGLE_DRIVE_FOLDER_ID
+        # Accept a comma-separated list so several Drive roots can be watched at once.
+        self.folder_ids = [p.strip() for p in raw_folder_id.split(",") if p.strip()]
+        self.folder_id = self.folder_ids[0] if self.folder_ids else ""
         self.service_account_file = (
             service_account_file or settings.GOOGLE_SERVICE_ACCOUNT_FILE
         )
@@ -65,26 +69,89 @@ class GoogleDriveService:
         """
         processed_ids = processed_ids or set()
 
-        # Build query for video files in the folder
         mime_query = " or ".join(
             f"mimeType='{mime}'" for mime in self.VIDEO_MIME_TYPES
         )
-        query = f"'{self.folder_id}' in parents and ({mime_query}) and trashed=false"
 
-        results = (
-            self.service.files()
-            .list(
-                q=query,
-                fields="files(id, name, createdTime, size, mimeType, videoMediaMetadata)",
-                orderBy="createdTime desc",
-            )
-            .execute()
+        # Search every watched root *and* its subfolders. Google Meet files
+        # recordings into per-event "<name> (recurring)" subfolders, so scanning
+        # only the roots silently returns nothing.
+        found: dict[str, dict] = {}
+        for folder_id in self._all_folder_ids():
+            for file in self._list_all(
+                f"'{folder_id}' in parents and ({mime_query}) and trashed=false",
+                "files(id, name, createdTime, size, mimeType, videoMediaMetadata)",
+            ):
+                found[file["id"]] = file
+
+        files = sorted(
+            found.values(), key=lambda f: f.get("createdTime", ""), reverse=True
         )
-
-        files = results.get("files", [])
 
         # Filter out already processed files
         return [f for f in files if f["id"] not in processed_ids]
+
+    def _list_all(self, query: str, fields: str) -> list[dict]:
+        """Run a Drive query, following pagination to the end.
+
+        Args:
+            query: Drive API query string.
+            fields: Fields spec for the files collection.
+
+        Returns:
+            Every matching file, across all result pages.
+        """
+        items: list[dict] = []
+        page_token = None
+
+        while True:
+            response = (
+                self.service.files()
+                .list(
+                    q=query,
+                    fields=f"nextPageToken, {fields}",
+                    orderBy="createdTime desc",
+                    pageSize=100,
+                    pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                )
+                .execute()
+            )
+            items.extend(response.get("files", []))
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                return items
+
+    def _all_folder_ids(self) -> list[str]:
+        """Expand the watched roots into themselves plus every subfolder below.
+
+        Returns:
+            Folder IDs to search, roots first. Cycles are ignored and the walk
+            stops at MAX_FOLDER_DEPTH so a deep tree can't stall the run.
+        """
+        seen: set[str] = set()
+        ordered: list[str] = []
+        frontier = [(folder_id, 0) for folder_id in self.folder_ids]
+
+        while frontier:
+            folder_id, depth = frontier.pop(0)
+            if folder_id in seen:
+                continue
+            seen.add(folder_id)
+            ordered.append(folder_id)
+
+            if depth >= self.MAX_FOLDER_DEPTH:
+                continue
+
+            subfolders = self._list_all(
+                f"'{folder_id}' in parents and "
+                "mimeType='application/vnd.google-apps.folder' and trashed=false",
+                "files(id)",
+            )
+            frontier.extend((sub["id"], depth + 1) for sub in subfolders)
+
+        return ordered
 
     def get_new_lectures(
         self,
