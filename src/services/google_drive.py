@@ -28,12 +28,15 @@ class GoogleDriveService:
         self,
         folder_id: str | None = None,
         service_account_file: str | None = None,
+        impersonate_user: str | None = None,
     ):
         """Initialize the Google Drive service.
 
         Args:
             folder_id: Google Drive folder ID to watch.
             service_account_file: Path to service account JSON file.
+            impersonate_user: Workspace user to act as via domain-wide
+                delegation. Falls back to settings; empty disables it.
         """
         raw_folder_id = folder_id or settings.GOOGLE_DRIVE_FOLDER_ID
         # Accept a comma-separated list so several Drive roots can be watched at once.
@@ -41,6 +44,11 @@ class GoogleDriveService:
         self.folder_id = self.folder_ids[0] if self.folder_ids else ""
         self.service_account_file = (
             service_account_file or settings.GOOGLE_SERVICE_ACCOUNT_FILE
+        )
+        self.impersonate_user = (
+            impersonate_user
+            if impersonate_user is not None
+            else settings.GOOGLE_IMPERSONATE_USER
         )
         self._service = None
 
@@ -52,6 +60,10 @@ class GoogleDriveService:
                 self.service_account_file,
                 scopes=self.SCOPES,
             )
+            if self.impersonate_user:
+                # Domain-wide delegation: act as this user, so the whole of their
+                # Drive is visible without per-folder sharing.
+                credentials = credentials.with_subject(self.impersonate_user)
             self._service = build("drive", "v3", credentials=credentials)
         return self._service
 

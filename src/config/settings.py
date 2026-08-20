@@ -14,6 +14,10 @@ class Settings:
     # Google Drive
     GOOGLE_DRIVE_FOLDER_ID: str = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "")
     GOOGLE_SERVICE_ACCOUNT_FILE: str = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "")
+    # Workspace user to impersonate via domain-wide delegation. When set, the
+    # service account sees that user's whole Drive, so recordings no longer have
+    # to be shared with it folder by folder.
+    GOOGLE_IMPERSONATE_USER: str = os.getenv("GOOGLE_IMPERSONATE_USER", "")
 
     # AWS S3
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
