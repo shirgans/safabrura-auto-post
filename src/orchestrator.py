@@ -13,6 +13,7 @@ from src.models.lecture import Lecture
 from src.services.google_drive import GoogleDriveService
 from src.services.s3_upload import S3UploadService
 from src.services.ffmpeg_converter import FFmpegConverter
+from src.services.loop_clip import LoopClipMaker
 from src.services.captivate import CaptivateService
 from src.services.wordpress import WordPressService
 from src.services.tracking import ProcessingTracker
@@ -31,6 +32,9 @@ class WorkflowState(TypedDict):
     s3_url: str | None
     s3_key: str | None
     s3_embed_code: str | None
+    loop_url: str | None
+    loop_poster_url: str | None
+    loop_start: int | None
     captivate_episode_id: str | None
     captivate_mp3_url: str | None
     captivate_embed_code: str | None
@@ -56,7 +60,8 @@ class LectureWorkflow:
 
     Optimized flow (no local video download):
     1. Stream video from Google Drive directly to S3
-    2. FFmpeg reads from S3 URL to create MP3 (only MP3 saved locally)
+    2. Cut a short background loop for the post's card
+    3. FFmpeg reads from S3 URL to create MP3 (only MP3 saved locally)
     3. Upload MP3 to Captivate.fm
     4. Create WordPress draft post
     5. Cleanup (only MP3 to delete)
@@ -67,6 +72,7 @@ class LectureWorkflow:
         self.drive_service = GoogleDriveService()
         self.s3_service = S3UploadService()
         self.ffmpeg_converter = FFmpegConverter()
+        self.loop_maker = LoopClipMaker()
         self.captivate_service = CaptivateService()
         self.wordpress_service = WordPressService()
         self.tracker = ProcessingTracker()
@@ -78,6 +84,7 @@ class LectureWorkflow:
 
         # Add nodes - optimized flow
         workflow.add_node("stream_to_s3", self._stream_to_s3)
+        workflow.add_node("generate_loop", self._generate_loop)
         workflow.add_node("convert_to_mp3", self._convert_to_mp3)
         workflow.add_node("upload_to_captivate", self._upload_to_captivate)
         workflow.add_node("create_wordpress_post", self._create_wordpress_post)
@@ -85,7 +92,8 @@ class LectureWorkflow:
 
         # Define edges (linear flow)
         workflow.set_entry_point("stream_to_s3")
-        workflow.add_edge("stream_to_s3", "convert_to_mp3")
+        workflow.add_edge("stream_to_s3", "generate_loop")
+        workflow.add_edge("generate_loop", "convert_to_mp3")
         workflow.add_edge("convert_to_mp3", "upload_to_captivate")
         workflow.add_edge("upload_to_captivate", "create_wordpress_post")
         workflow.add_edge("create_wordpress_post", "cleanup")
@@ -139,6 +147,55 @@ class LectureWorkflow:
             logger.error(error)
             state["errors"].append(error)
             state["lecture"].add_error(error)
+
+        return state
+
+    def _generate_loop(self, state: WorkflowState) -> WorkflowState:
+        """Cut the six seconds that will sit behind this lecture's card.
+
+        Decorative, so a failure here is logged and stepped over rather than
+        added to the lecture's errors — a card without a loop is the card the
+        site had yesterday, and the audio still matters more.
+        """
+        state["current_step"] = "generate_loop"
+
+        if not settings.LOOP_ENABLED:
+            return state
+
+        if not state["s3_url"]:
+            logger.warning("No S3 URL to cut a loop from")
+            return state
+
+        try:
+            settings.ensure_temp_dir()
+            basename = sanitize_filename(state["lecture"].filename)
+            if basename.endswith(".mp4"):
+                basename = basename[:-4]
+
+            result = self.loop_maker.make(
+                video_url=state["s3_url"],
+                output_dir=settings.TEMP_DOWNLOAD_PATH,
+                basename=f"{basename}-loop",
+                start=settings.LOOP_START,
+            )
+
+            # The offset is in the key, so asking for a different frame later
+            # writes a new object rather than hiding behind a cached one.
+            key = f"{settings.LOOP_S3_PREFIX}/{basename}-{result['start']}"
+            state["loop_url"] = self.s3_service.upload_file(
+                result["clip"], f"{key}.mp4", content_type="video/mp4"
+            )
+            state["loop_poster_url"] = self.s3_service.upload_file(
+                result["poster"], f"{key}.jpg", content_type="image/jpeg"
+            )
+            state["loop_start"] = result["start"]
+
+            for path in (result["clip"], result["poster"]):
+                path.unlink(missing_ok=True)
+
+            logger.info(f"Card loop ready: {state['loop_url']}")
+        except Exception as e:
+            logger.warning(f"Could not make a card loop: {e}")
 
         return state
 
@@ -261,6 +318,12 @@ class LectureWorkflow:
             if state.get("captivate_mp3_url"):
                 acf_meta["captivate_episode_mp3_url"] = state["captivate_mp3_url"]
                 acf_meta["audio_file"] = state["captivate_mp3_url"]
+
+            # Card background loop
+            if state.get("loop_url"):
+                acf_meta["loop_video"] = state["loop_url"]
+                acf_meta["loop_poster"] = state["loop_poster_url"] or ""
+                acf_meta["loop_start"] = str(state["loop_start"])
             
             # Simple content - just the video since theme handles audio player
             content = ""
@@ -337,6 +400,9 @@ class LectureWorkflow:
                 "s3_url": None,
                 "s3_key": None,
                 "s3_embed_code": None,
+                "loop_url": None,
+                "loop_poster_url": None,
+                "loop_start": None,
                 "captivate_episode_id": None,
                 "captivate_mp3_url": None,
                 "captivate_embed_code": None,
@@ -353,6 +419,9 @@ class LectureWorkflow:
             "s3_url": None,
             "s3_key": None,
             "s3_embed_code": None,
+            "loop_url": None,
+            "loop_poster_url": None,
+            "loop_start": None,
             "captivate_episode_id": None,
             "captivate_mp3_url": None,
             "captivate_embed_code": None,

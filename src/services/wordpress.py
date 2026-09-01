@@ -199,6 +199,35 @@ class WordPressService:
 
         return response.json()
 
+    def update_post_meta(self, post_id: int, meta: dict) -> dict:
+        """Write meta fields onto an existing post.
+
+        Only keys registered with show_in_rest in the theme's functions.php
+        are accepted; anything else is quietly dropped by WordPress.
+
+        Args:
+            post_id: The post to update.
+            meta: Meta keys and values to write.
+
+        Returns:
+            The updated post data.
+
+        Raises:
+            RuntimeError: If the update fails.
+        """
+        url = f"{self.api_url}/posts/{post_id}"
+
+        response = requests.post(
+            url, json={"meta": meta}, auth=self.auth, headers=self.headers
+        )
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Failed to update post meta: {response.status_code} - {response.text}"
+            )
+
+        return response.json()
+
     def check_api_access(self) -> bool:
         """Check if the WordPress API is accessible.
 

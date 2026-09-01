@@ -1,0 +1,67 @@
+name: Generate Card Loop
+
+# Cuts the six-second clip that sits behind a lecture's card. Normally the
+# main pipeline does this for new lectures; this workflow exists for the
+# button on the WordPress post edit screen, which fires a repository_dispatch
+# when someone wants a different frame.
+
+on:
+  repository_dispatch:
+    types: [generate_loop]
+  workflow_dispatch:
+    inputs:
+      post_id:
+        description: 'WordPress post ID'
+        required: true
+      video_url:
+        description: "The lecture's mp4 URL"
+        required: true
+      start:
+        description: 'Seconds into the lecture to cut from'
+        required: false
+        default: '1800'
+
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create .env file
+        run: |
+          cat << 'EOF' > .env
+          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_S3_BUCKET=${{ secrets.AWS_S3_BUCKET }}
+          AWS_S3_REGION=${{ secrets.AWS_S3_REGION }}
+          WORDPRESS_URL=${{ secrets.WORDPRESS_URL }}
+          WORDPRESS_USERNAME=${{ secrets.WORDPRESS_USERNAME }}
+          WORDPRESS_APP_PASSWORD=${{ secrets.WORDPRESS_APP_PASSWORD }}
+          TEMP_DOWNLOAD_PATH=./temp
+          FFMPEG_PATH=ffmpeg
+          EOF
+
+      - name: Cut the loop
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          POST_ID: ${{ github.event.client_payload.post_id || inputs.post_id }}
+          VIDEO_URL: ${{ github.event.client_payload.video_url || inputs.video_url }}
+          START: ${{ github.event.client_payload.start || inputs.start || '1800' }}
+        run: |
+          python src/generate_loop.py \
+            --post-id "$POST_ID" \
+            --video-url "$VIDEO_URL" \
+            --start "$START" \
+            -v

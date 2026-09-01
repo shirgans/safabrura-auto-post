@@ -45,6 +45,18 @@ class Settings:
     # Video poster image URL
     VIDEO_POSTER_URL: str = os.getenv("VIDEO_POSTER_URL", "")
 
+    # Card background loops: a few silent seconds of the lecture itself,
+    # played behind its card in the archive.
+    LOOP_ENABLED: bool = os.getenv("LOOP_ENABLED", "true").lower() not in ("0", "false", "no")
+    # Half an hour in — past the greetings, into the shiur.
+    LOOP_START: int = int(os.getenv("LOOP_START", "1800"))
+    LOOP_DURATION: int = int(os.getenv("LOOP_DURATION", "6"))
+    LOOP_WIDTH: int = int(os.getenv("LOOP_WIDTH", "480"))
+    LOOP_FPS: int = int(os.getenv("LOOP_FPS", "24"))
+    LOOP_CRF: int = int(os.getenv("LOOP_CRF", "30"))
+    LOOP_S3_PREFIX: str = os.getenv("LOOP_S3_PREFIX", "videos/loops").strip("/")
+    FFPROBE_PATH: str = os.getenv("FFPROBE_PATH", "ffprobe")
+
     @classmethod
     def validate(cls) -> list[str]:
         """Validate that required settings are present.

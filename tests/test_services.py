@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch, MagicMock
 from src.models.lecture import Lecture
 from src.services.ffmpeg_converter import FFmpegConverter
 from src.services.s3_upload import S3UploadService
+from src.services.loop_clip import LoopClipMaker
 
 
 class TestLectureModel:
@@ -116,6 +117,33 @@ class TestS3UploadService:
         assert service._guess_content_type(Path("video.mp4")) == "video/mp4"
         assert service._guess_content_type(Path("audio.mp3")) == "audio/mpeg"
         assert service._guess_content_type(Path("unknown.xyz")) is None
+
+
+class TestLoopClipMaker:
+    """Tests for the card background loops."""
+
+    def test_start_is_kept_when_the_lecture_is_long_enough(self):
+        """A full-length shiur is cut where we asked."""
+        maker = LoopClipMaker()
+
+        with patch.object(maker, "probe_duration", return_value=5400.0):
+            assert maker.resolve_start("https://example.com/a.mp4", 1800) == 1800
+
+    def test_short_recording_falls_back_to_its_midpoint(self):
+        """A recording that ends before the mark would otherwise yield nothing."""
+        maker = LoopClipMaker()
+
+        with patch.object(maker, "probe_duration", return_value=600.0):
+            start = maker.resolve_start("https://example.com/a.mp4", 1800)
+
+        assert start == 294  # 600 / 2, less the six seconds of clip
+
+    def test_unprobeable_video_keeps_the_requested_start(self):
+        """If ffprobe can't tell us, try the offset we were given anyway."""
+        maker = LoopClipMaker()
+
+        with patch.object(maker, "probe_duration", return_value=None):
+            assert maker.resolve_start("https://example.com/a.mp4", 1800) == 1800
 
 
 class TestIntegration:
