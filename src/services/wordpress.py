@@ -226,7 +226,22 @@ class WordPressService:
                 f"Failed to update post meta: {response.status_code} - {response.text}"
             )
 
-        return response.json()
+        data = response.json()
+
+        # WordPress accepts the request and answers 200 whether or not it kept
+        # anything: a key that isn't registered with show_in_rest is dropped in
+        # silence. Check what came back, so a theme that hasn't been deployed
+        # yet fails here loudly instead of thirty-six times quietly.
+        written = data.get("meta") or {}
+        ignored = [k for k, v in meta.items() if str(written.get(k, "")) != str(v)]
+        if ignored:
+            raise RuntimeError(
+                f"WordPress kept none of {ignored} on post {post_id} — those meta keys "
+                "are probably not registered with show_in_rest in the theme's "
+                "functions.php, or the deployed theme predates them."
+            )
+
+        return data
 
     def list_posts(self, per_page: int = 20, page: int = 1, fields: str = "id,title,content,meta") -> list[dict]:
         """Recent posts, newest first.
