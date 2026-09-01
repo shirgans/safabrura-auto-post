@@ -228,6 +228,32 @@ class WordPressService:
 
         return response.json()
 
+    def list_posts(self, per_page: int = 20, page: int = 1, fields: str = "id,title,content,meta") -> list[dict]:
+        """Recent posts, newest first.
+
+        Args:
+            per_page: How many to fetch (the API caps this at 100).
+            page: Which page of results.
+            fields: Comma-separated _fields to ask for.
+
+        Returns:
+            A list of post dicts.
+
+        Raises:
+            RuntimeError: If the request fails.
+        """
+        url = f"{self.api_url}/posts"
+        params = {"per_page": per_page, "page": page, "status": "publish", "_fields": fields}
+
+        response = requests.get(url, params=params, auth=self.auth, headers=self.headers)
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Failed to list posts: {response.status_code} - {response.text}"
+            )
+
+        return response.json()
+
     def check_api_access(self) -> bool:
         """Check if the WordPress API is accessible.
 
